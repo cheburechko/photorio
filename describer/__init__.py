@@ -1,25 +1,36 @@
 import requests
+import click
 from PIL import Image
 from transformers import BlipProcessor, BlipForConditionalGeneration
 
-MODEL_PATH = "./blip-image-captioning-large";
 
-if __name__ == "__main__":
-    processor = BlipProcessor.from_pretrained(MODEL_PATH)
-    model = BlipForConditionalGeneration.from_pretrained(MODEL_PATH)
+class Model:
+    def __init__(self, path: str) -> None:
+        self.processor = BlipProcessor.from_pretrained(path)
+        self.model = BlipForConditionalGeneration.from_pretrained(path).to("cuda")
+    
+    def caption(self, raw_image: Image.Image) -> str:
+        inputs = self.processor(raw_image, return_tensors="pt").to("cuda")
+        out = self.model.generate(max_new_tokens=20, **inputs)
+        return self.processor.decode(out[0], skip_special_tokens=True)
+    
 
-    img_url = 'https://storage.googleapis.com/sfr-vision-language-research/BLIP/demo.jpg' 
-    raw_image = Image.open(requests.get(img_url, stream=True).raw).convert('RGB')
+def fetch_image(url: str) -> Image.Image:
+    return Image.open(requests.get(url, stream=True).raw).convert('RGB')
 
-    # conditional image captioning
-    text = "a photography of"
-    inputs = processor(raw_image, text, return_tensors="pt")
 
-    out = model.generate(**inputs)
-    print(processor.decode(out[0], skip_special_tokens=True))
+@click.command()
+@click.option('--model-path', default="./blip-image-captioning-large", help='Path to model')
+@click.option('--image-url', default='https://storage.googleapis.com/sfr-vision-language-research/BLIP/demo.jpg', help='Image url')
+def caption(model_path, image_url):
+    """Caption the image at the url"""
+    raw_image = fetch_image(image_url)
 
-    # unconditional image captioning
-    inputs = processor(raw_image, return_tensors="pt")
+    model = Model(model_path)
 
-    out = model.generate(**inputs)
-    print(processor.decode(out[0], skip_special_tokens=True))
+    result = model.caption(raw_image)
+
+    print(result)
+
+if __name__ == '__main__':
+    caption()
