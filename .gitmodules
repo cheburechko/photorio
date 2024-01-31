@@ -1,3 +1,3 @@
 [submodule "blip-image-captioning-large"]
-	path = blip-image-captioning-large
+	path = describer/blip-image-captioning-large
 	url = https://huggingface.co/Salesforce/blip-image-captioning-large
