@@ -1,4 +1,5 @@
 model_path: ./blip-image-captioning-large
+debug: true
 topics:
   - to_describe
 kafka_config:

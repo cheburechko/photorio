@@ -10,7 +10,12 @@ from transformers import BlipProcessor, BlipForConditionalGeneration
 import yaml
 
 
-class Model:
+class BaseModel:
+    def caption(self, raw_image: Image.Image) -> str:
+        raise NotImplemented
+
+
+class BlipModel(BaseModel):
     def __init__(self, path: str) -> None:
         self.processor = BlipProcessor.from_pretrained(path)
         self.model = BlipForConditionalGeneration.from_pretrained(path).to("cuda")
@@ -19,7 +24,15 @@ class Model:
         inputs = self.processor(raw_image, return_tensors="pt").to("cuda")
         out = self.model.generate(max_new_tokens=20, **inputs)
         return self.processor.decode(out[0], skip_special_tokens=True)
+
+
+class StubModel(BaseModel):
+    def __init__(self, path: str) -> None:
+        pass
     
+    def caption(self, raw_image: Image.Image) -> str:
+        return repr(raw_image)
+
 
 def fetch_image(url: str) -> Image.Image:
     return Image.open(requests.get(url, stream=True).raw).convert('RGB')
@@ -27,9 +40,8 @@ def fetch_image(url: str) -> Image.Image:
 
 @dataclass
 class Context:
-    """Class for keeping track of an item in inventory."""
     config: dict
-    model: Model
+    model: BaseModel
 
 
 @click.group()
@@ -40,7 +52,8 @@ def cli(ctx, config_path):
         config = yaml.safe_load(f)
 
     ctx.ensure_object(dict)
-    ctx.obj = Context(config, Model(config["model_path"]))
+    model_cls = StubModel if config["debug"] else BlipModel
+    ctx.obj = Context(config, model_cls(config["model_path"]))
 
 
 @cli.command()
