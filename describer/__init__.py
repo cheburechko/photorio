@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 import json
-from time import sleep
+import logging
+import os
+import sys
 
 import click
 from kafka import KafkaConsumer
@@ -8,6 +10,9 @@ from PIL import Image
 import requests
 from transformers import BlipProcessor, BlipForConditionalGeneration
 import yaml
+
+
+logger = logging.getLogger(__name__)
 
 
 class BaseModel:
@@ -38,6 +43,14 @@ def fetch_image(url: str) -> Image.Image:
     return Image.open(requests.get(url, stream=True).raw).convert('RGB')
 
 
+def setup_logging(logger):
+    logger.setLevel(logging.INFO)
+
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(funcName)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
+
+
 @dataclass
 class Context:
     config: dict
@@ -48,6 +61,7 @@ class Context:
 @click.option('--config-path', default='./config.yaml', help='Config path')
 @click.pass_context
 def cli(ctx, config_path):
+    setup_logging(logger)
     with open(config_path) as f:
         config = yaml.safe_load(f)
 
@@ -72,16 +86,27 @@ def caption(ctx, image_url):
 @click.pass_context
 def run(ctx):
     """Read messages from Kafka and describe urls"""
+    logger.info("Starting")
+
     consumer = KafkaConsumer(
         *ctx.obj.config["topics"],
+        sasl_plain_password=os.getenv("KAFKA_PASSWORD"),
+        value_deserializer=lambda m: json.loads(m.decode('ascii')),
         **ctx.obj.config["kafka_config"],
     )
 
+    logger.info("Initialized consumer")
+
     for msg in consumer:
-        image_url = json.loads(msg)["url"]
-        raw_image = fetch_image(image_url)
-        result = ctx.obj.model.caption(raw_image)
-        print(result)
+        try:
+            image_url = msg.value.get("url")
+            raw_image = fetch_image(image_url)
+            result = ctx.obj.model.caption(raw_image)
+            logger.info("URL: %s, caption: %s", image_url, result)
+        except Exception:
+            logger.exception("Failed to process message")
+    
+    logger.info("Finished consuming")
 
     if consumer is not None:
         consumer.close()

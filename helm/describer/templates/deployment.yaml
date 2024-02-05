@@ -40,6 +40,12 @@ spec:
           volumeMounts:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          env:
+          - name: KAFKA_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: kafka-user-passwords
+                key: client-passwords
       {{- with .Values.volumes }}
       volumes:
         {{- toYaml . | nindent 8 }}

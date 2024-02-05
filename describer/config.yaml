@@ -6,5 +6,7 @@ kafka_config:
   auto_offset_reset: 'earliest'
   bootstrap_servers:
     - 'kafka.default.svc.cluster.local:9092'
-  consumer_timeout_ms: 1000
   group_id: describer
+  security_protocol: SASL_PLAINTEXT
+  sasl_mechanism: PLAIN
+  sasl_plain_username: user1
