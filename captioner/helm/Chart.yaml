@@ -1,5 +1,5 @@
 apiVersion: v2
-name: describer
+name: captioner
 description: Describes photos
 type: application
 version: 0.1.0

@@ -2,7 +2,6 @@ from dataclasses import dataclass
 import json
 import logging
 import os
-import sys
 
 import click
 from kafka import KafkaConsumer
@@ -66,7 +65,7 @@ def cli(ctx, config_path):
         config = yaml.safe_load(f)
 
     ctx.ensure_object(dict)
-    model_cls = StubModel if config["debug"] else BlipModel
+    model_cls = StubModel if os.getenv("DEBUG") else BlipModel
     ctx.obj = Context(config, model_cls(config["model_path"]))
 
 

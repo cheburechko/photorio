@@ -1,12 +1,10 @@
-model_path: ./blip-image-captioning-large
-debug: true
+model_path: ./model
 topics:
-  - to_describe
+  - to_caption
 kafka_config:
-  auto_offset_reset: 'earliest'
   bootstrap_servers:
     - 'kafka.default.svc.cluster.local:9092'
-  group_id: describer
+  group_id: captioner
   security_protocol: SASL_PLAINTEXT
   sasl_mechanism: PLAIN
   sasl_plain_username: user1
