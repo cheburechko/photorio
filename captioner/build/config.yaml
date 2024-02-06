@@ -8,3 +8,6 @@ kafka_config:
   security_protocol: SASL_PLAINTEXT
   sasl_mechanism: PLAIN
   sasl_plain_username: user1
+
+elastic_server: http://elasticsearch.default.svc.cluster.local:9200
+index: captions

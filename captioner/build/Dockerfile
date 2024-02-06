@@ -4,7 +4,7 @@ USER root
 
 WORKDIR /root
 
-RUN pip3 install transformers requests click kafka-python
+RUN pip3 install transformers requests click kafka-python elasticsearch
 
 COPY "model/*.json" ./model/
 COPY "model/*.txt" ./model/

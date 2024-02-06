@@ -5,6 +5,7 @@ import os
 import click
 import yaml
 
+import elastic
 import fetch
 import model
 from consumer import Consumer
@@ -63,7 +64,10 @@ def run(ctx):
     consumer = Consumer(ctx.obj.config["topics"], ctx.obj.config["kafka_config"])
     logger.info("Initialized consumer")
 
-    consumer.consume(ctx.obj.model)
+    es = elastic.ElasticClient(ctx.obj.config["elastic_server"], ctx.obj.config["index"])
+    logger.info("Initialized elastic")
+
+    consumer.consume(ctx.obj.model, es)
     logger.info("Finished consuming")
 
 
