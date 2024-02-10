@@ -1,43 +1,51 @@
 package main
 
 import (
-	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
-	"html/template"
-	"log"
+	"log/slog"
 	"net/http"
-	"path/filepath"
 	"strings"
 
+	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/typedapi/core/search"
+	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
+	"github.com/gin-gonic/gin"
 	"github.com/ilyakaznacheev/cleanenv"
 )
 
 type (
 	Config struct {
-		Port         string `yaml:"port" env:"PORT" env-default:"9000"`
-		TemplateRoot string `yaml:"template_root"`
+		Port          string               `yaml:"port" env:"PORT" env-default:"9000"`
+		TemplateGLOB  string               `yaml:"template_glob"`
+		Elasticsearch elasticsearch.Config `yaml:"elasticsearch"`
 	}
 
 	App struct {
-		Config         *Config
-		SearchTemplate *template.Template
+		Config              *Config
+		ElasticsearchClient *elasticsearch.TypedClient
+	}
+
+	SearchItem struct {
+		URL     string `json:"url"`
+		Caption string `json:"caption"`
 	}
 
 	SearchResponse struct {
-		Text string
+		Items []*SearchItem
 	}
 )
 
 func NewApp(c *Config) (*App, error) {
-	tmpl, err := template.ParseFiles(filepath.Join(c.TemplateRoot, "search_result.html"))
+	client, err := elasticsearch.NewTypedClient(c.Elasticsearch)
 	if err != nil {
 		return nil, err
 	}
 
 	return &App{
-		SearchTemplate: tmpl,
-		Config: c,
+		Config:              c,
+		ElasticsearchClient: client,
 	}, nil
 }
 
@@ -56,52 +64,76 @@ func readConfig() (*Config, error) {
 func main() {
 	cfg, err := readConfig()
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("Failed to read config", slog.String("error", err.Error()))
 		return
 	}
 
 	app, err := NewApp(cfg)
 
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("Failed to create app", slog.String("error", err.Error()))
 		return
 	}
 
-	mux := http.NewServeMux()
+	router := gin.Default()
+	router.LoadHTMLGlob(app.Config.TemplateGLOB)
+	router.Use(gin.Logger())
+	router.Use(gin.Recovery())
 
-	mux.Handle("/", http.HandlerFunc(app.Home))
-	mux.Handle("/search", http.HandlerFunc(app.Search))
+	router.GET("/", app.Home)
+	router.POST("/search", app.Search)
 
 	addr := fmt.Sprintf(":%s", app.Config.Port)
-	log.Printf("Address: %s", addr)
 
-	err = http.ListenAndServe(addr, mux)
-	log.Fatal(err)
+	err = router.Run(addr)
+	slog.Error("Finishing", slog.String("error", err.Error()))
 }
 
-func (a *App) Home(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, filepath.Join(a.Config.TemplateRoot, "index.html"))
+func (a *App) Home(c *gin.Context) {
+	c.HTML(http.StatusOK, "index.html", nil)
 }
 
-func (a *App) Search(w http.ResponseWriter, r *http.Request) {
-	query := strings.ToLower(r.PostFormValue("prompt"))
+func (a *App) Search(c *gin.Context) {
+	query := strings.ToLower(c.Request.PostFormValue("prompt"))
 
-	if query == "" {
-		_, _ = w.Write([]byte("Please enter something"))
+	result, err := a.ElasticsearchClient.Search().
+		Index("captions").
+		Request(&search.Request{
+			Query: &types.Query{
+				Match: map[string]types.MatchQuery{
+					"caption": {Query: query},
+				},
+			},
+		}).
+		Do(c)
+
+	if err != nil {
+		AbortWithHTML(c, err)		
 		return
 	}
 
 	resp := SearchResponse{
-		Text: query,
+		Items: make([]*SearchItem, result.Hits.Total.Value),
 	}
 
-	var buf bytes.Buffer
+	for i, item := range result.Hits.Hits {
+		var parsed SearchItem
+		err = json.Unmarshal(item.Source_, &parsed)
+		if err != nil {
+			AbortWithHTML(c, err)
 
-	err := a.SearchTemplate.Execute(&buf, resp)
-	if err != nil {
-		http.Error(w, "Failed to render template", http.StatusInternalServerError)
-		return
+			marshalled, _ := item.Source_.MarshalJSON()
+			slog.Error("failed to unmarshall json", slog.String("json", string(marshalled)))
+			return
+		}
+		resp.Items[i] = &parsed
 	}
 
-	_, err = buf.WriteTo(w)
+	c.HTML(http.StatusOK, "search_result.html", resp)
+}
+
+func AbortWithHTML(c *gin.Context, err error) {
+	c.Abort()
+	c.Error(err)
+	c.HTML(http.StatusInternalServerError, "error.html", err.Error())
 }

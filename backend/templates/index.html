@@ -2,15 +2,31 @@
 <html lang="en">
     <head>
         <title>Photorio</title>
-        <script src="https://unpkg.com/htmx.org@1.6.1"></script>
+        <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+        <script src="https://unpkg.com/htmx.org/dist/ext/response-targets.js"></script>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
     </head>
-    <body>
-        <div>
+    <body class="p-3 m-0">
+        <div hx-ext="response-targets">
             <h1><span>Photorio</span></h1>
-            <div>
-                <input name="prompt" type="text" hx-post="/search" hx-trigger="keyup[key == 'Enter']" hx-target="#results" placeholder="Search for photos...">
-                <div id="results"></div>
-            </div>
+            <nav class="navbar bg-body-tertiary">
+                <div class="container-fluid">              
+                <input 
+                    name="prompt"
+                    type="search"
+                    class="form-control"
+                    hx-post="/search"
+                    hx-trigger="keyup[key == 'Enter']"
+                    placeholder="Search for photos..."
+                    hx-target="#results"
+                    hx-target-404="#not-found"
+                    hx-target-5**="#results"
+                    hx-indicator="#spinner"
+                >
+                </div>
+            </nav>
+            <div id="results"></div>
+            <div id="spinner" class="htmx-indicator alert alert-primary" role="alert">Searching...</div>
         </div>
     </body>
 </html>

@@ -1,1 +1,4 @@
-template_root: ./templates
+template_glob: ./templates/*
+elasticsearch:
+  Addresses:
+  - http://localhost:9200
