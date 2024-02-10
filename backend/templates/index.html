@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>Photorio</title>
+        <script src="https://unpkg.com/htmx.org@1.6.1"></script>
+    </head>
+    <body>
+        <div>
+            <h1><span>Photorio</span></h1>
+            <div>
+                <input name="prompt" type="text" hx-post="/search" hx-trigger="keyup[key == 'Enter']" hx-target="#results" placeholder="Search for photos...">
+                <div id="results"></div>
+            </div>
+        </div>
+    </body>
+</html>
