@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"flag"
@@ -24,7 +24,7 @@ type (
 	}
 )
 
-func readConfig() (*Config, error) {
+func ReadConfig() (*Config, error) {
 	var cfg Config
 
 	configPath := flag.String("config", "config.yaml", "Path to config")

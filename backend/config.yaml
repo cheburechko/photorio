@@ -1,4 +1,4 @@
-template_glob: ./templates/*
+template_glob: ./web/*
 elasticsearch:
   Addresses:
   - http://localhost:9200
