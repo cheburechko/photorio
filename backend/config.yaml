@@ -2,3 +2,8 @@ template_glob: ./templates/*
 elasticsearch:
   Addresses:
   - http://localhost:9200
+postgres:
+  host: localhost
+  port: 5432
+  user: postgres
+  database: postgres
