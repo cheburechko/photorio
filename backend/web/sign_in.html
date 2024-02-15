@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+    {{template "head"}}
+    <body class="p-3 m-0" hx-ext="response-targets">
+        <form hx-post="/submit_signin" hx-target-5**="#error" hx-target-4**="#error" class="container-lg">
+            <div class="mb-3">
+                <label for="login" class="form-label">Login</label>
+                <input type="text" class="form-control" name="login">
+            </div>
+            <div class="mb-3">
+                <label for="password" class="form-label">Password</label>
+                <input type="password" class="form-control" name="password">
+            </div>
+            <button type="submit" class="btn btn-primary">
+                Submit
+            </button>
+        </form>
+        <div id="error"></div>
+    </body>
+</html>

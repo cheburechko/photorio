@@ -21,6 +21,7 @@ type (
 		TemplateGLOB  string               `yaml:"template_glob"`
 		Elasticsearch elasticsearch.Config `yaml:"elasticsearch"`
 		Postgres      PostgresConfig
+		CookieSecret  string `env:"COOKIE_SECRET"`
 	}
 )
 

@@ -36,9 +36,21 @@ func NewApp(c *Config) (*App, error) {
 	}, nil
 }
 
-
 func (a *App) Home(c *gin.Context) {
-	c.HTML(http.StatusOK, "index.html", nil)
+	c.HTML(http.StatusOK, "index.html", CheckAdmin(c))
+}
+
+func (a *App) SignIn(c *gin.Context) {
+	if CheckAdmin(c) {
+		c.Redirect(http.StatusFound, "/admin/")
+		return
+	}
+
+	c.HTML(http.StatusOK, "sign_in.html", nil)
+}
+
+func (a *App) Admin(c *gin.Context) {
+	c.HTML(http.StatusOK, "admin.html", nil)
 }
 
 func (a *App) Search(c *gin.Context) {
@@ -47,15 +59,35 @@ func (a *App) Search(c *gin.Context) {
 	resp, err := Search(query, a.ElasticsearchClient, c)
 
 	if err != nil {
-		AbortWithHTML(c, err)
+		AbortWithHTML(c, http.StatusInternalServerError, err)
 		return
 	}
 
 	c.HTML(http.StatusOK, "search_result.html", resp)
 }
 
-func AbortWithHTML(c *gin.Context, err error) {
+func (a *App) SubmitSignIn(c *gin.Context) {
+	login := c.Request.PostFormValue("login")
+	password := c.Request.PostFormValue("password")
+
+	if login != "login" || password != "password" {
+		AbortWithHTML(c, http.StatusUnauthorized, fmt.Errorf("Bad creds"))
+		return
+	}
+
+	err := SetAdmin(c)
+
+	if err != nil {
+		AbortWithHTML(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	c.Redirect(http.StatusFound, "/admin/")
+	return
+}
+
+func AbortWithHTML(c *gin.Context, code int, err error) {
 	c.Abort()
 	c.Error(err)
-	c.HTML(http.StatusInternalServerError, "error.html", err.Error())
+	c.HTML(code, "error.html", err.Error())
 }
