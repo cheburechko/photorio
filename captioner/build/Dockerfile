@@ -13,4 +13,4 @@ COPY "model/pytorch_model.bin" ./model/
 COPY "python/*.py" .
 COPY "build/config.yaml" .
 
-CMD ["python3", "__init__.py", "--config-path", "./config.yaml", "run"]
+CMD ["python3", "run.py", "--config-path", "./config.yaml", "run"]
