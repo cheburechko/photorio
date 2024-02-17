@@ -1,3 +1,4 @@
 .vscode
 .creds
 .junk
+__pycache__
