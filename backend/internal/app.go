@@ -9,12 +9,23 @@ import (
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type App struct {
 	Config              *Config
 	ElasticsearchClient *elasticsearch.TypedClient
 	Postgres            *pgxpool.Pool
+}
+
+type User struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type Response struct {
+	Message string `json:"message"`
 }
 
 func NewApp(c *Config) (*App, error) {
@@ -70,20 +81,58 @@ func (a *App) SubmitSignIn(c *gin.Context) {
 	login := c.Request.PostFormValue("login")
 	password := c.Request.PostFormValue("password")
 
-	if login != "login" || password != "password" {
-		AbortWithHTML(c, http.StatusUnauthorized, fmt.Errorf("Bad creds"))
+	var hashedPassword string
+	err := a.Postgres.QueryRow(c, "select password from users where username = $1", login).Scan(&hashedPassword)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			AbortWithHTML(c, http.StatusUnauthorized, fmt.Errorf("bad creds"))
+		} else {
+			AbortWithHTML(c, http.StatusInternalServerError, err)
+		}
 		return
 	}
 
-	err := SetAdmin(c)
+	err = bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
+
+	if err != nil {
+		AbortWithHTML(c, http.StatusUnauthorized, fmt.Errorf("bad creds"))
+		return
+	}
+
+	err = SetAdmin(c)
 
 	if err != nil {
 		AbortWithHTML(c, http.StatusInternalServerError, err)
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/admin/")
-	return
+	c.Status(http.StatusOK)
+	c.Header("hx-redirect", "/admin/")
+}
+
+func (a *App) CreateUser(c *gin.Context) {
+	var user User
+	err := c.BindJSON(&user)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, Response{Message: "bad json"})
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, Response{Message: err.Error()})
+		return
+	}
+
+	_, err = a.Postgres.Exec(c, "insert into users(username, password) values($1, $2);", user.Username, hashedPassword)
+
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, Response{Message: err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, Response{Message: "registered"})
 }
 
 func AbortWithHTML(c *gin.Context, code int, err error) {

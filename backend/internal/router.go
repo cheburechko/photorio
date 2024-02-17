@@ -17,7 +17,7 @@ func BuildRouter(app *App) *gin.Engine {
 
 	router.LoadHTMLGlob(app.Config.TemplateGLOB)
 	router.Use(gin.Logger())
-	router.Use(sessions.Sessions("admin", store))
+	router.Use(sessions.Sessions(AdminSessionsName, store))
 	router.Use(gin.Recovery())
 
 	router.GET("/", app.Home)
@@ -25,9 +25,13 @@ func BuildRouter(app *App) *gin.Engine {
 	router.GET("/signin", app.SignIn)
 	router.POST("/submit_signin", app.SubmitSignIn)
 
-	adminRouter := router.Group(AdminSessionsName)
+	adminRouter := router.Group("/admin")
 	adminRouter.Use(AdminAuth)
 	adminRouter.GET("/", app.Admin)
+
+	apiRouter := router.Group("/api")
+	apiRouter.Use(AdminAuth)
+	apiRouter.POST("/register", app.CreateUser)
 
 	return router
 }
