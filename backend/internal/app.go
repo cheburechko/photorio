@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/gin-gonic/gin"
@@ -152,6 +151,19 @@ func (a *App) SubmitCaptionTask(c *gin.Context) {
 }
 
 func (a *App) CaptionTasks(c *gin.Context) {
+	db, err := a.Postgres.Acquire(c)
+	if err != nil {
+		AbortWithHTML(c, http.StatusInternalServerError, err)
+		return
+	}
+	defer db.Release()
+
+	_, err = db.Exec(c, "listen caption_task_status_channel")
+	if err != nil {
+		AbortWithHTML(c, http.StatusInternalServerError, err)
+		return
+	}
+
 	conn, err := a.Upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		AbortWithHTML(c, http.StatusInternalServerError, err)
@@ -160,7 +172,7 @@ func (a *App) CaptionTasks(c *gin.Context) {
 	defer conn.Close()
 
 	for {
-		rows, err := a.Postgres.Query(c, "select prompt, status, total_subtasks, completed_subtasks from caption_tasks;")
+		rows, err := db.Query(c, "select prompt, status, total_subtasks, completed_subtasks from caption_tasks;")
 		if err != nil {
 			a.HandleWebsocketError(c, "Failed to execute query", conn, err)
 			return
@@ -193,7 +205,12 @@ func (a *App) CaptionTasks(c *gin.Context) {
 			a.HandleWebsocketError(c, "Failed to write to ws", conn, err)
 			return
 		}
-		time.Sleep(time.Second)
+
+		_, err = db.Conn().WaitForNotification(c)
+		if err != nil {
+			a.HandleWebsocketError(c, "Failed to get notification", conn, err)
+			return
+		}
 	}
 }
 
