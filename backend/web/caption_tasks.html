@@ -1,0 +1,13 @@
+<tbody id="tasks">
+    {{ range . }}
+    <tr>
+        <td>{{ .Prompt }}</td>
+        <td>{{ .Status }}</td>
+        <td>
+            <div class="progress" role="progressbar" aria-label="Basic example" aria-valuenow="{{ .CompletedSubtasks }}" aria-valuemin="0" aria-valuemax="{{ .TotalSubtasks }}">
+                <div class="progress-bar" style="width: {{ .PercentComplete }}%;">{{ .CompletedSubtasks }}/{{ .TotalSubtasks }}</div>
+            </div>
+        </td>
+    </tr>
+    {{ end }}
+</tbody>

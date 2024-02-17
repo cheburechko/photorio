@@ -21,17 +21,19 @@ func BuildRouter(app *App) *gin.Engine {
 	router.Use(gin.Recovery())
 
 	router.GET("/", app.Home)
-	router.POST("/search", app.Search)
-	router.GET("/signin", app.SignIn)
-	router.POST("/submit_signin", app.SubmitSignIn)
+	router.POST("search", app.Search)
+	router.GET("signin", app.SignIn)
+	router.POST("submit_signin", app.SubmitSignIn)
 
 	adminRouter := router.Group("/admin")
 	adminRouter.Use(AdminAuth)
 	adminRouter.GET("/", app.Admin)
+	adminRouter.POST("submit_caption_task", app.SubmitCaptionTask)
+	adminRouter.GET("caption_tasks", app.CaptionTasks)
 
 	apiRouter := router.Group("/api")
 	apiRouter.Use(AdminAuth)
-	apiRouter.POST("/register", app.CreateUser)
+	apiRouter.POST("register", app.CreateUser)
 
 	return router
 }

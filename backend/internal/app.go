@@ -1,15 +1,20 @@
 package internal
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"html/template"
+	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -17,6 +22,8 @@ type App struct {
 	Config              *Config
 	ElasticsearchClient *elasticsearch.TypedClient
 	Postgres            *pgxpool.Pool
+	Upgrader            *websocket.Upgrader
+	Templates           *template.Template
 }
 
 type User struct {
@@ -26,6 +33,14 @@ type User struct {
 
 type Response struct {
 	Message string `json:"message"`
+}
+
+type CaptionTask struct {
+	Prompt            string `json:"prompt"`
+	Status            string `json:"status"`
+	TotalSubtasks     int    `json:"total_subtasks"`
+	CompletedSubtasks int    `json:"completed_subtasks"`
+	PercentComplete   int    `json:"percent_complete"`
 }
 
 func NewApp(c *Config) (*App, error) {
@@ -40,10 +55,22 @@ func NewApp(c *Config) (*App, error) {
 		return nil, err
 	}
 
+	upgrader := websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+	}
+
+	templates, err := template.ParseGlob(c.TemplateGLOB)
+	if err != nil {
+		return nil, err
+	}
+
 	return &App{
 		Config:              c,
 		ElasticsearchClient: client,
 		Postgres:            dbpool,
+		Upgrader:            &upgrader,
+		Templates:           templates,
 	}, nil
 }
 
@@ -109,6 +136,78 @@ func (a *App) SubmitSignIn(c *gin.Context) {
 
 	c.Status(http.StatusOK)
 	c.Header("hx-redirect", "/admin/")
+}
+
+func (a *App) SubmitCaptionTask(c *gin.Context) {
+	prompt := c.Request.PostFormValue("prompt")
+
+	_, err := a.Postgres.Exec(c, "insert into caption_tasks(prompt) values($1);", prompt)
+
+	if err != nil {
+		AbortWithHTML(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	c.HTML(http.StatusOK, "submit_caption_task_success.html", nil)
+}
+
+func (a *App) CaptionTasks(c *gin.Context) {
+	conn, err := a.Upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		AbortWithHTML(c, http.StatusInternalServerError, err)
+		return
+	}
+	defer conn.Close()
+
+	for {
+		rows, err := a.Postgres.Query(c, "select prompt, status, total_subtasks, completed_subtasks from caption_tasks;")
+		if err != nil {
+			a.HandleWebsocketError(c, "Failed to execute query", conn, err)
+			return
+		}
+
+		var tasks []CaptionTask
+
+		for rows.Next() {
+			var task CaptionTask
+			err := rows.Scan(&task.Prompt, &task.Status, &task.TotalSubtasks, &task.CompletedSubtasks)
+			task.PercentComplete = 0
+			if task.TotalSubtasks > 0 {
+				task.PercentComplete = 100 * task.CompletedSubtasks / task.TotalSubtasks
+			}
+			if err != nil {
+				a.HandleWebsocketError(c, "Failed to scan get row from table", conn, err)
+				return
+			}
+			tasks = append(tasks, task)
+		}
+
+		template, err := a.RenderTemplate(c, "caption_tasks.html", tasks)
+		if err != nil {
+			a.HandleWebsocketError(c, "Failed to render template", conn, err)
+			return
+		}
+
+		err = conn.WriteMessage(websocket.TextMessage, template)
+		if err != nil {
+			a.HandleWebsocketError(c, "Failed to write to ws", conn, err)
+			return
+		}
+		time.Sleep(time.Second)
+	}
+}
+
+func (a* App) HandleWebsocketError(c *gin.Context, msg string, conn *websocket.Conn, err error) {
+	slog.Error(msg, slog.String("error", err.Error()))
+	template, _ := a.RenderTemplate(c, "error.html", err)
+
+	conn.WriteMessage(websocket.CloseMessage, template)
+}
+
+func (a* App) RenderTemplate(c *gin.Context, name string, data any) ([]byte, error) {
+	var buffer bytes.Buffer
+	err := a.Templates.ExecuteTemplate(&buffer, name, data)
+	return buffer.Bytes(), err
 }
 
 func (a *App) CreateUser(c *gin.Context) {

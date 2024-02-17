@@ -1,7 +1,27 @@
 <!DOCTYPE html>
 <html lang="en">
     {{template "head"}}
-    <body class="p-3 m-0">
-        THE SECRETS ARE HERE
+    <body class="p-3 m-0" hx-ext="response-targets">
+        <form hx-post="/admin/submit_caption_task" hx-target="#status" hx-target-5**="#status" class="container-lg">
+            <div class="mb-3">
+                <label for="prompt" class="form-label">Enter new caption prompt</label>
+                <input type="text" class="form-control" name="prompt">
+            </div>
+            <button type="submit" class="btn btn-primary">
+                Submit
+            </button>
+        </form>
+        <div id="status"></div>
+        <table class="table" hx-ext="ws" ws-connect="/admin/caption_tasks">
+            <thead>
+              <tr>
+                <th scope="col">Prompt</th>
+                <th scope="col">Status</th>
+                <th scope="col">Progress</th>
+              </tr>
+            </thead>
+            <tbody id="tasks">
+            </tbody>
+        </table>
     </body>
 </html>
