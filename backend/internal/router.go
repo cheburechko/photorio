@@ -11,7 +11,7 @@ import (
 const AdminSessionsName = "admin"
 
 func BuildRouter(app *App) *gin.Engine {
-	router := gin.Default()
+	router := gin.New()
 
 	store := cookie.NewStore([]byte(app.Config.CookieSecret))
 

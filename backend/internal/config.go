@@ -1,11 +1,6 @@
 package internal
 
-import (
-	"flag"
-
-	"github.com/elastic/go-elasticsearch/v8"
-	"github.com/ilyakaznacheev/cleanenv"
-)
+import "github.com/elastic/go-elasticsearch/v8"
 
 type (
 	PostgresConfig struct {
@@ -16,23 +11,19 @@ type (
 		Database string `yaml:"database"`
 	}
 
-	Config struct {
+	KafkaConfig struct {
+		Brokers      []string `yaml:"brokers"`
+		Group        string   `yaml:"group"`
+		TaskTopic    string   `yaml:"task_topic"`
+		CaptionTopic string   `yaml:"caption_topic"`
+	}
+
+	AppConfig struct {
 		Port          string               `yaml:"port" env:"PORT" env-default:"9000"`
 		TemplateGLOB  string               `yaml:"template_glob"`
 		Elasticsearch elasticsearch.Config `yaml:"elasticsearch"`
+		CookieSecret  string               `env:"COOKIE_SECRET"`
+		Kafka         KafkaConfig          `yaml:"kafka"`
 		Postgres      PostgresConfig
-		CookieSecret  string `env:"COOKIE_SECRET"`
 	}
 )
-
-func ReadConfig() (*Config, error) {
-	var cfg Config
-
-	configPath := flag.String("config", "config.yaml", "Path to config")
-
-	flag.Parse()
-
-	err := cleanenv.ReadConfig(*configPath, &cfg)
-
-	return &cfg, err
-}

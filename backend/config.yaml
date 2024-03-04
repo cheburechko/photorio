@@ -7,3 +7,8 @@ postgres:
   port: 5432
   user: postgres
   database: photorio
+kafka:
+  brokers:
+  - localhost:9092
+  task_topic: tasks
+  group: worker

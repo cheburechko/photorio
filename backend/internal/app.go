@@ -3,12 +3,14 @@ package internal
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
 	"strings"
 
+	"github.com/IBM/sarama"
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -18,31 +20,15 @@ import (
 )
 
 type App struct {
-	Config              *Config
+	Config              *AppConfig
 	ElasticsearchClient *elasticsearch.TypedClient
 	Postgres            *pgxpool.Pool
 	Upgrader            *websocket.Upgrader
 	Templates           *template.Template
+	KafkaProducer       sarama.SyncProducer
 }
 
-type User struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
-type Response struct {
-	Message string `json:"message"`
-}
-
-type CaptionTask struct {
-	Prompt            string `json:"prompt"`
-	Status            string `json:"status"`
-	TotalSubtasks     int    `json:"total_subtasks"`
-	CompletedSubtasks int    `json:"completed_subtasks"`
-	PercentComplete   int    `json:"percent_complete"`
-}
-
-func NewApp(c *Config) (*App, error) {
+func NewApp(c *AppConfig) (*App, error) {
 	client, err := elasticsearch.NewTypedClient(c.Elasticsearch)
 	if err != nil {
 		return nil, err
@@ -64,13 +50,25 @@ func NewApp(c *Config) (*App, error) {
 		return nil, err
 	}
 
+	config := sarama.NewConfig()
+	config.Producer.Return.Successes = true
+	producer, err := sarama.NewSyncProducer(c.Kafka.Brokers, config)
+	if err != nil {
+		return nil, err
+	}
+
 	return &App{
 		Config:              c,
 		ElasticsearchClient: client,
 		Postgres:            dbpool,
 		Upgrader:            &upgrader,
 		Templates:           templates,
+		KafkaProducer:       producer,
 	}, nil
+}
+
+func (a *App) Close() {
+	a.Postgres.Close()
 }
 
 func (a *App) Home(c *gin.Context) {
@@ -96,7 +94,7 @@ func (a *App) Search(c *gin.Context) {
 	resp, err := Search(query, a.ElasticsearchClient, c)
 
 	if err != nil {
-		AbortWithHTML(c, http.StatusInternalServerError, err)
+		AbortWithInternalError(c, err)
 		return
 	}
 
@@ -114,7 +112,7 @@ func (a *App) SubmitSignIn(c *gin.Context) {
 		if err == pgx.ErrNoRows {
 			AbortWithHTML(c, http.StatusUnauthorized, fmt.Errorf("bad creds"))
 		} else {
-			AbortWithHTML(c, http.StatusInternalServerError, err)
+			AbortWithInternalError(c, err)
 		}
 		return
 	}
@@ -129,7 +127,7 @@ func (a *App) SubmitSignIn(c *gin.Context) {
 	err = SetAdmin(c)
 
 	if err != nil {
-		AbortWithHTML(c, http.StatusInternalServerError, err)
+		AbortWithInternalError(c, err)
 		return
 	}
 
@@ -140,10 +138,35 @@ func (a *App) SubmitSignIn(c *gin.Context) {
 func (a *App) SubmitCaptionTask(c *gin.Context) {
 	prompt := c.Request.PostFormValue("prompt")
 
-	_, err := a.Postgres.Exec(c, "insert into caption_tasks(prompt) values($1);", prompt)
+	var id int
+
+	err := a.Postgres.QueryRow(c, "insert into caption_tasks(prompt) values($1) on conflict do nothing returning id", prompt).Scan(&id)
+	if err == pgx.ErrNoRows {
+		AbortWithHTML(c, http.StatusBadRequest, fmt.Errorf("task exists"))
+		return
+	} else if err != nil {
+		AbortWithInternalError(c, err)
+		return
+	}
+
+	task := CaptionTaskEvent{
+		Id:     id,
+		Prompt: prompt,
+	}
+
+	jsonTask, err := json.Marshal(task)
+	if err != nil {
+		AbortWithInternalError(c, err)
+		return
+	}
+
+	_, _, err = a.KafkaProducer.SendMessage(&sarama.ProducerMessage{
+		Topic: a.Config.Kafka.TaskTopic,
+		Value: sarama.StringEncoder(jsonTask),
+	})
 
 	if err != nil {
-		AbortWithHTML(c, http.StatusInternalServerError, err)
+		AbortWithInternalError(c, err)
 		return
 	}
 
@@ -153,20 +176,20 @@ func (a *App) SubmitCaptionTask(c *gin.Context) {
 func (a *App) CaptionTasks(c *gin.Context) {
 	db, err := a.Postgres.Acquire(c)
 	if err != nil {
-		AbortWithHTML(c, http.StatusInternalServerError, err)
+		AbortWithInternalError(c, err)
 		return
 	}
 	defer db.Release()
 
 	_, err = db.Exec(c, "listen caption_task_status_channel")
 	if err != nil {
-		AbortWithHTML(c, http.StatusInternalServerError, err)
+		AbortWithInternalError(c, err)
 		return
 	}
 
 	conn, err := a.Upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		AbortWithHTML(c, http.StatusInternalServerError, err)
+		AbortWithInternalError(c, err)
 		return
 	}
 	defer conn.Close()
@@ -214,14 +237,14 @@ func (a *App) CaptionTasks(c *gin.Context) {
 	}
 }
 
-func (a* App) HandleWebsocketError(c *gin.Context, msg string, conn *websocket.Conn, err error) {
+func (a *App) HandleWebsocketError(c *gin.Context, msg string, conn *websocket.Conn, err error) {
 	slog.Error(msg, slog.String("error", err.Error()))
 	template, _ := a.RenderTemplate(c, "error.html", err)
 
 	conn.WriteMessage(websocket.CloseMessage, template)
 }
 
-func (a* App) RenderTemplate(c *gin.Context, name string, data any) ([]byte, error) {
+func (a *App) RenderTemplate(c *gin.Context, name string, data any) ([]byte, error) {
 	var buffer bytes.Buffer
 	err := a.Templates.ExecuteTemplate(&buffer, name, data)
 	return buffer.Bytes(), err
@@ -255,4 +278,8 @@ func AbortWithHTML(c *gin.Context, code int, err error) {
 	c.Abort()
 	c.Error(err)
 	c.HTML(code, "error.html", err.Error())
+}
+
+func AbortWithInternalError(c *gin.Context, err error) {
+	AbortWithHTML(c, http.StatusInternalServerError, err)
 }
