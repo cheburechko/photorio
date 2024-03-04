@@ -12,3 +12,4 @@ kafka:
   - localhost:9092
   task_topic: tasks
   group: worker
+poll_period: 60s

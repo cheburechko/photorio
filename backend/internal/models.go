@@ -1,5 +1,7 @@
 package internal
 
+import "time"
+
 type (
 	User struct {
 		Username string `json:"username"`
@@ -11,12 +13,13 @@ type (
 	}
 
 	CaptionTask struct {
-		Id                int    `json:"id"`
-		Prompt            string `json:"prompt"`
-		Status            string `json:"status"`
-		TotalSubtasks     int    `json:"total_subtasks"`
-		CompletedSubtasks int    `json:"completed_subtasks"`
-		PercentComplete   int    `json:"percent_complete"`
+		Id                int       `json:"id"`
+		Prompt            string    `json:"prompt"`
+		Status            string    `json:"status"`
+		TotalSubtasks     int       `json:"total_subtasks"`
+		CompletedSubtasks int       `json:"completed_subtasks"`
+		PercentComplete   int       `json:"percent_complete"`
+		CreatedAt         time.Time `json:"created_at"`
 	}
 
 	CaptionTaskEvent struct {

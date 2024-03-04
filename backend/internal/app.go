@@ -3,14 +3,12 @@ package internal
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
 	"strings"
 
-	"github.com/IBM/sarama"
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -25,7 +23,7 @@ type App struct {
 	Postgres            *pgxpool.Pool
 	Upgrader            *websocket.Upgrader
 	Templates           *template.Template
-	KafkaProducer       sarama.SyncProducer
+	KafkaProducer       *Producer
 }
 
 func NewApp(c *AppConfig) (*App, error) {
@@ -50,9 +48,7 @@ func NewApp(c *AppConfig) (*App, error) {
 		return nil, err
 	}
 
-	config := sarama.NewConfig()
-	config.Producer.Return.Successes = true
-	producer, err := sarama.NewSyncProducer(c.Kafka.Brokers, config)
+	producer, err := NewProducer(c.Kafka)
 	if err != nil {
 		return nil, err
 	}
@@ -154,16 +150,7 @@ func (a *App) SubmitCaptionTask(c *gin.Context) {
 		Prompt: prompt,
 	}
 
-	jsonTask, err := json.Marshal(task)
-	if err != nil {
-		AbortWithInternalError(c, err)
-		return
-	}
-
-	_, _, err = a.KafkaProducer.SendMessage(&sarama.ProducerMessage{
-		Topic: a.Config.Kafka.TaskTopic,
-		Value: sarama.StringEncoder(jsonTask),
-	})
+	err = a.KafkaProducer.SendTaskEvent(&task)
 
 	if err != nil {
 		AbortWithInternalError(c, err)
@@ -195,7 +182,7 @@ func (a *App) CaptionTasks(c *gin.Context) {
 	defer conn.Close()
 
 	for {
-		rows, err := db.Query(c, "select prompt, status, total_subtasks, completed_subtasks from caption_tasks;")
+		rows, err := db.Query(c, "select prompt, status, total_subtasks, completed_subtasks, created_at from caption_tasks order by created_at;")
 		if err != nil {
 			a.HandleWebsocketError(c, "Failed to execute query", conn, err)
 			return
@@ -205,7 +192,7 @@ func (a *App) CaptionTasks(c *gin.Context) {
 
 		for rows.Next() {
 			var task CaptionTask
-			err := rows.Scan(&task.Prompt, &task.Status, &task.TotalSubtasks, &task.CompletedSubtasks)
+			err := rows.Scan(&task.Prompt, &task.Status, &task.TotalSubtasks, &task.CompletedSubtasks, &task.CreatedAt)
 			task.PercentComplete = 0
 			if task.TotalSubtasks > 0 {
 				task.PercentComplete = 100 * task.CompletedSubtasks / task.TotalSubtasks

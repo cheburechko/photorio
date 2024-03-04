@@ -2,6 +2,7 @@
     {{ range . }}
     <tr>
         <td>{{ .Prompt }}</td>
+        <td>{{ .CreatedAt.Format "02.01.2006 15:04:05" }}</td>
         <td>{{ .Status }}</td>
         <td>
             <div class="progress" role="progressbar" aria-label="Basic example" aria-valuenow="{{ .CompletedSubtasks }}" aria-valuemin="0" aria-valuemax="{{ .TotalSubtasks }}">

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/IBM/sarama"
 	"github.com/ilyakaznacheev/cleanenv"
@@ -14,8 +15,9 @@ import (
 
 type (
 	Config struct {
-		Postgres internal.PostgresConfig
-		Kafka    internal.KafkaConfig
+		Postgres   internal.PostgresConfig
+		Kafka      internal.KafkaConfig
+		PollPeriod time.Duration `yaml:"poll_period"`
 	}
 )
 
@@ -38,16 +40,14 @@ func main() {
 		return
 	}
 
-	saramaConfig := sarama.NewConfig()
-	saramaConfig.Producer.Return.Successes = true
-	saramaConfig.Consumer.Offsets.Initial = sarama.OffsetOldest
-
-	producer, err := sarama.NewSyncProducer(cfg.Kafka.Brokers, saramaConfig)
+	producer, err := internal.NewProducer(cfg.Kafka)
 	if err != nil {
 		slog.Error("Failed to create producer", slog.String("error", err.Error()))
 		return
 	}
 
+	saramaConfig := sarama.NewConfig()
+	saramaConfig.Consumer.Offsets.Initial = sarama.OffsetOldest
 	consumerGroup, err := sarama.NewConsumerGroup(cfg.Kafka.Brokers, cfg.Kafka.Group, saramaConfig)
 	if err != nil {
 		slog.Error("Failed to create consumer group", slog.String("error", err.Error()))
@@ -62,8 +62,11 @@ func main() {
 	}
 
 	consumer := internal.NewConsumer(cfg.Kafka, producer, dbpool)
+	poller := internal.NewPoller(producer, dbpool, cfg.PollPeriod)
 
 	ctx := context.Background()
+
+	go poller.Run(ctx)
 
 	slog.Info("Starting consumer")
 	err = consumer.Run(ctx, consumerGroup)

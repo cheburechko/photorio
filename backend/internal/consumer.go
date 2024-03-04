@@ -12,11 +12,11 @@ import (
 
 type Consumer struct {
 	config   KafkaConfig
-	producer sarama.SyncProducer
+	producer *Producer
 	postgres *pgxpool.Pool
 }
 
-func NewConsumer(config KafkaConfig, producer sarama.SyncProducer, postgres *pgxpool.Pool) *Consumer {
+func NewConsumer(config KafkaConfig, producer *Producer, postgres *pgxpool.Pool) *Consumer {
 	return &Consumer{
 		config:   config,
 		producer: producer,
@@ -126,18 +126,12 @@ func (consumer *Consumer) ProcessTask(ctx context.Context, value []byte) error {
 		}
 	}
 
-	event.Url = "ololo"
-	jsonEvent, err := json.Marshal(event)
-	if err != nil {
-		return err
-	}
-
 	if completed < total {
 		slog.Info("Sending task to kafka", slog.String("prompt", event.Prompt), slog.Int("completed", completed), slog.Int("total", total))
-		_, _, err = consumer.producer.SendMessage(&sarama.ProducerMessage{
-			Topic: consumer.config.TaskTopic,
-			Value: sarama.StringEncoder(jsonEvent),
-		})
+
+		event.Url = "ololo"
+		err = consumer.producer.SendTaskEvent(&event)
+
 		if err != nil {
 			return err
 		}
