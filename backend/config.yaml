@@ -3,10 +3,7 @@ elasticsearch:
   Addresses:
   - http://localhost:9200
 postgres:
-  host: localhost
-  port: 5432
-  user: postgres
-  database: photorio
+  connection_url: postgresql://postgres@localhost:5432/photorio
 kafka:
   brokers:
   - localhost:9092

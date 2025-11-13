@@ -32,8 +32,7 @@ func NewApp(c *AppConfig) (*App, error) {
 		return nil, err
 	}
 
-	psqlUrl := fmt.Sprintf("postgresql://%s:%s@%s:%s/%s", c.Postgres.User, c.Postgres.Password, c.Postgres.Host, c.Postgres.Port, c.Postgres.Database)
-	dbpool, err := pgxpool.New(context.Background(), psqlUrl)
+	dbpool, err := pgxpool.New(context.Background(), c.Postgres.ConnectionUrl)
 	if err != nil {
 		return nil, err
 	}

@@ -4,7 +4,6 @@ import (
 	"backend/internal"
 	"context"
 	"flag"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -54,8 +53,7 @@ func main() {
 		return
 	}
 
-	psqlUrl := fmt.Sprintf("postgresql://%s:%s@%s:%s/%s", cfg.Postgres.User, cfg.Postgres.Password, cfg.Postgres.Host, cfg.Postgres.Port, cfg.Postgres.Database)
-	dbpool, err := pgxpool.New(context.Background(), psqlUrl)
+	dbpool, err := pgxpool.New(context.Background(), cfg.Postgres.ConnectionUrl)
 	if err != nil {
 		slog.Error("Failed to create postgres", slog.String("error", err.Error()))
 		return

@@ -4,11 +4,7 @@ import "github.com/elastic/go-elasticsearch/v8"
 
 type (
 	PostgresConfig struct {
-		Host     string `yaml:"host"`
-		Port     string `yaml:"port"`
-		User     string `yaml:"user"`
-		Password string `yaml:"password" env:"POSTGRES_PASSWORD"`
-		Database string `yaml:"database"`
+		ConnectionUrl     string `yaml:"connection_url"`
 	}
 
 	KafkaConfig struct {
