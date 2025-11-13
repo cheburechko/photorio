@@ -1,17 +1,22 @@
 package internal
 
-import "github.com/elastic/go-elasticsearch/v8"
+import (
+	"os"
+	"strings"
+
+	"github.com/elastic/go-elasticsearch/v8"
+)
 
 type (
 	PostgresConfig struct {
-		ConnectionUrl     string `yaml:"connection_url"`
+		ConnectionUrl     string `env:"POSTGRES_CONNECTION_URL"`
 	}
 
 	KafkaConfig struct {
-		Brokers      []string `yaml:"brokers"`
+		Brokers      []string `env:"KAFKA_BROKERS"`
 		Group        string   `yaml:"group"`
-		TaskTopic    string   `yaml:"task_topic"`
-		CaptionTopic string   `yaml:"caption_topic"`
+		TaskTopic    string   `yaml:"task_topic" env:"TASK_TOPIC"`
+		CaptionTopic string   `yaml:"caption_topic" env:"CAPTION_TOPIC"`
 	}
 
 	AppConfig struct {
@@ -23,3 +28,10 @@ type (
 		Postgres      PostgresConfig
 	}
 )
+
+func (c *AppConfig) Update() error {
+	if os.Getenv("ELASTICSEARCH_ADDRESSES") != "" {
+		c.Elasticsearch.Addresses = strings.Split(os.Getenv("ELASTICSEARCH_ADDRESSES"), ",")
+	}
+	return nil
+}

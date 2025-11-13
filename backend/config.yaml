@@ -2,11 +2,7 @@ template_glob: ./web/*
 elasticsearch:
   Addresses:
   - http://localhost:9200
-postgres:
-  connection_url: postgresql://postgres@localhost:5432/photorio
 kafka:
-  brokers:
-  - localhost:9092
   task_topic: tasks
   group: worker
 poll_period: 60s

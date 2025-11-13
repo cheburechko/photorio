@@ -1,3 +1,4 @@
+import contextlib
 import os
 import subprocess
 
@@ -7,28 +8,63 @@ import pytest
 from testcontainers.elasticsearch import ElasticSearchContainer
 from testcontainers.postgres import PostgresContainer
 from testcontainers.kafka import KafkaContainer
-import yaml
+from testcontainers.core.container import DockerContainer
+from testcontainers.core.waiting_utils import wait_for_logs
+from testcontainers.core.network import Network
 
 
-@pytest.fixture(scope="session")
-def elasticsearch():
-    with ElasticSearchContainer("library/elasticsearch:8.12.0") as container:
-        host = container.get_container_host_ip()
-        port = container.get_exposed_port(9200)
-
-        yield host, port
-
-
-@pytest.fixture(scope="session")
-def postgresql():
-    with PostgresContainer("postgres:16", driver=None) as container:
+@contextlib.contextmanager
+def dump_logs(container, test_output_dir, name):
+    try:
         yield container
+    finally:
+        logs = container.get_logs()
+        with open(test_output_dir(f"{name}.out"), "w") as f:
+            f.write(logs[0].decode("utf-8"))
+        with open(test_output_dir(f"{name}.err"), "w") as f:
+            f.write(logs[1].decode("utf-8"))
 
 
 @pytest.fixture(scope="session")
-def kafka():
-    with KafkaContainer() as container:
-        yield [container.get_bootstrap_server()]
+def network():
+    with Network() as network:
+        yield network
+
+
+@pytest.fixture(scope="session")
+def elasticsearch(network, test_output_dir):
+    with ElasticSearchContainer(
+        "library/elasticsearch:8.12.0", network=network
+    ) as container:
+        with dump_logs(container, test_output_dir, "elasticsearch"):
+            yield container
+
+
+@pytest.fixture(scope="session")
+def postgresql(root_dir, test_output_dir, network):
+    with PostgresContainer("postgres:16", driver=None, network=network) as container:
+        os.environ["DATABASE_URL"] = container.get_connection_url()
+        os.environ["ROOT_DATABASE_URL"] = container.get_connection_url()
+
+        run_binary(
+            [
+                "graphile-migrate",
+                "reset",
+                "--config",
+                root_dir("graphile/.gmrc"),
+                "--erase",
+            ],
+            test_output_dir,
+        )
+        with dump_logs(container, test_output_dir, "postgresql"):
+            yield container
+
+
+@pytest.fixture(scope="session")
+def kafka(network, test_output_dir):
+    with KafkaContainer(network=network) as container:
+        with dump_logs(container, test_output_dir, "kafka"):
+            yield [container.get_bootstrap_server()]
 
 
 @pytest.fixture(scope="session")
@@ -57,7 +93,7 @@ def kafka_task_reader(kafka, kafka_task_topic):
 
 
 @pytest.fixture(scope="function")
-def kafka_task_writer(kafka, kafka_task_topic):
+def kafka_task_writer(kafka):
     producer = KafkaProducer(bootstrap_servers=kafka)
     yield producer
     producer.close()
@@ -90,35 +126,12 @@ def test_output_dir(root_dir):
 
 
 @pytest.fixture(scope="function")
-def worker_config(postgresql, kafka, kafka_task_topic, elasticsearch, root_dir):
-    return {
-        "template_glob": root_dir("web/*"),
-        "elasticsearch": {
-            "Addresses": [elasticsearch],
-        },
-        "postgres": {
-            "connection_url": postgresql.get_connection_url(),
-        },
-        "kafka": {
-            "brokers": kafka,
-            "task_topic": kafka_task_topic,
-            "group": "worker",
-            "poll_period": "60s",
-        },
-    }
-
-
-@pytest.fixture(scope="function")
-def worker_config_path(test_output_dir, worker_config):
-    worker_config_path = test_output_dir("worker.yaml")
-    with open(worker_config_path, "w") as worker_config_file:
-        yaml.dump(worker_config, worker_config_file)
-    yield worker_config_path
-
-
-@pytest.fixture(scope="function")
-def worker(root_dir, worker_config_path, test_output_dir):
-    yield from run_binary(
-        [root_dir("backend/cmd/worker/worker"), "--config", worker_config_path],
-        test_output_dir,
-    )
+def worker(postgresql, kafka, kafka_task_topic, test_output_dir, network):
+    with DockerContainer("photorio/worker:latest", network=network).with_envs(
+        POSTGRES_CONNECTION_URL=postgresql.get_connection_url(),
+        KAFKA_BROKERS=kafka[0],
+        TASK_TOPIC=kafka_task_topic,
+    ) as container:
+        with dump_logs(container, test_output_dir, "worker"):
+            wait_for_logs(container, "Starting consumer", timeout=20)
+            yield container
