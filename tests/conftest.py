@@ -53,7 +53,7 @@ def postgresql(root_dir, test_output_dir, network):
     with dump_logs(container, test_output_dir, "postgresql"):
         connection_url = container.get_connection_url()
         os.environ["DATABASE_URL"] = connection_url
-        os.environ["ROOT_DATABASE_URL"] = connection_url
+        os.environ["ROOT_DATABASE_URL"] = f"{connection_url.rsplit('/', 1)[0]}/postgres"
 
         run_binary(
             [
@@ -64,6 +64,7 @@ def postgresql(root_dir, test_output_dir, network):
                 "--erase",
             ],
             test_output_dir,
+            cwd=root_dir("graphile"),
         )
         yield container
 
@@ -75,7 +76,12 @@ def postgresql_alias(postgresql):
 
 @pytest.fixture(scope="session")
 def kafka(network, test_output_dir):
-    container = KafkaContainer().with_network(network).with_network_aliases("kafka")
+    container = (
+        KafkaContainer()
+        .with_network(network)
+        .with_network_aliases("kafka")
+        .with_exposed_ports(9092)
+    )
     with dump_logs(container, test_output_dir, "kafka"):
         yield container
 
@@ -87,7 +93,7 @@ def kafka_group():
 
 @pytest.fixture(scope="session")
 def kafka_alias(kafka):
-    return f"kafka:{kafka.port}"
+    return f"kafka:9092"
 
 
 @pytest.fixture(scope="session")
@@ -119,17 +125,12 @@ def kafka_task_writer(kafka):
     producer.close()
 
 
-def run_binary(args, test_output_dir):
+def run_binary(args, test_output_dir, timeout=20, cwd=None):
     name = os.path.basename(args[0])
     with open(test_output_dir(f"{name}.err"), "w") as err:
         with open(test_output_dir(f"{name}.out"), "w") as out:
-            process = subprocess.Popen(args, stdout=out, stderr=err)
-            yield process
-            process.terminate()
-            try:
-                process.wait(5)
-            except subprocess.TimeoutExpired:
-                process.kill()
+            process = subprocess.Popen(args, stdout=out, stderr=err, cwd=cwd)
+            process.wait(timeout=timeout)
 
 
 @pytest.fixture(scope="session")
